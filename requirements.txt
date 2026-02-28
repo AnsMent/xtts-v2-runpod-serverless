@@ -1,5 +1,5 @@
+# requirements.txt ab minimal hai kyunki coqui-tts[cuda] sab cover karta hai
 runpod>=1.6.0
-coqui-tts>=0.24.0
 requests
 numpy
 scipy
