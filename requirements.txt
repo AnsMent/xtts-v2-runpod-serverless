@@ -3,3 +3,6 @@ TTS==0.22.0
 requests
 numpy
 scipy
+librosa
+noisereduce
+torchaudio
