@@ -11,7 +11,7 @@ import noisereduce as nr
 from TTS.api import TTS
 import traceback
 
-# Global model - lazy load to avoid startup crash
+# Global model - lazy load
 tts = None
 
 def load_model():
@@ -20,7 +20,7 @@ def load_model():
         try:
             print("Loading XTTS v2 model...")
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Device detected: {device}")
+            print(f"Device: {device}")
             if device == "cuda":
                 print(f"GPU: {torch.cuda.get_device_name(0)}")
                 print(f"CUDA version: {torch.version.cuda}")
@@ -31,12 +31,27 @@ def load_model():
         except Exception as load_error:
             print("CRITICAL: XTTS model loading failed!")
             print(traceback.format_exc())
-            raise  # Crash worker with log for debugging
+            raise
     return tts
+
+def validate_reference_audio(path):
+    try:
+        y, sr = librosa.load(path, sr=None)
+        duration = librosa.get_duration(y=y, sr=sr)
+        print(f"Reference audio: duration={duration:.2f}s, sample_rate={sr}")
+        if duration < 3:
+            raise ValueError("Reference audio too short (<3 seconds)")
+        if duration > 30:
+            print("Reference long (>30s) - clipping to 30s")
+            y = y[:30 * sr]
+        return y, sr
+    except Exception as e:
+        print(f"Reference validation failed: {str(e)}")
+        raise ValueError(f"Invalid reference audio: {str(e)}")
 
 def enhance_audio(audio, sr=24000):
     try:
-        print("Starting audio enhancement...")
+        print("Starting enhancement...")
         reduced = nr.reduce_noise(y=audio, sr=sr)
         trimmed, _ = librosa.effects.trim(reduced, top_db=25)
         fft = np.fft.rfft(trimmed)
@@ -48,25 +63,28 @@ def enhance_audio(audio, sr=24000):
         loudness = meter.integrated_loudness(shaped)
         normalized = pyln.normalize.loudness(shaped, loudness, -16.0)
         normalized = np.clip(normalized, -0.99, 0.99)
-        print("Audio enhancement completed")
+        print("Enhancement completed")
         return normalized
     except Exception as e:
-        print("Enhancement failed:", str(e))
+        print(f"Enhance failed: {str(e)}")
         traceback.print_exc()
-        return audio  # Fallback to original audio
+        return audio
 
 def handler(event):
-    print("Job received:", event.get("id", "unknown"))
+    job_id = event.get("id", "unknown")
+    print(f"Job started: {job_id}")
     try:
         input_data = event.get("input", {})
         text = input_data.get("text")
         language = input_data.get("language", "en")
         speaker_b64 = input_data.get("speaker_wav_base64")
 
-        if not text or not speaker_b64:
-            return {"error": "Missing text or speaker_wav_base64"}
+        if not text:
+            return {"error": "Text is required"}
+        if not speaker_b64:
+            return {"error": "speaker_wav_base64 is required"}
 
-        print(f"Processing text: '{text[:50]}...' | Language: {language}")
+        print(f"Text: '{text[:50]}...' | Language: {language}")
 
         speaker_bytes = base64.b64decode(speaker_b64)
 
@@ -74,8 +92,11 @@ def handler(event):
             tmp_s.write(speaker_bytes)
             speaker_path = tmp_s.name
 
+        validate_reference_audio(speaker_path)
+
         tts_model = load_model()
 
+        print("Starting TTS generation...")
         wav = tts_model.tts(
             text=text,
             speaker_wav=speaker_path,
@@ -84,8 +105,16 @@ def handler(event):
             speed=1.0
         )
 
-        audio_np = np.array(wav)
+        if len(wav) == 0:
+            raise ValueError("TTS generated empty audio (0 samples)")
+
+        print(f"TTS output samples: {len(wav)}")
+
+        audio_np = np.array(wav, dtype=np.float32)
         enhanced = enhance_audio(audio_np, 24000)
+
+        if len(enhanced) == 0:
+            raise ValueError("Enhanced audio is empty")
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
             output_path = tmp_out.name
@@ -98,11 +127,11 @@ def handler(event):
         os.remove(speaker_path)
         os.remove(output_path)
 
-        print("Job completed successfully")
-        return {"audio_base64": output_b64}
+        print(f"Job {job_id} success - audio samples: {len(enhanced)}")
+        return {"audio_base64": output_b64, "status": "success"}
 
     except Exception as e:
-        error_msg = f"Handler error: {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"Job {job_id} failed: {str(e)}\n{traceback.format_exc()}"
         print(error_msg)
         return {"error": error_msg}
 
