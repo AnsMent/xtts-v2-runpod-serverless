@@ -1,2 +1,0 @@
-# requirements.txt now empty/minimal since pip installs handle everything
-# No need for pinned versions here - coqui-tts[cuda] pulls compatible deps
