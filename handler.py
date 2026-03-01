@@ -9,21 +9,34 @@ import librosa
 import pyloudnorm as pyln
 import noisereduce as nr
 from TTS.api import TTS
+import traceback
 
-# Model load - delayed to handler first call (startup safe)
+# Global model - lazy load to avoid startup crash
 tts = None
 
 def load_model():
     global tts
     if tts is None:
-        print("Loading XTTS v2 model...")
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
-        print("XTTS v2 loaded on", device)
+        try:
+            print("Loading XTTS v2 model...")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Device detected: {device}")
+            if device == "cuda":
+                print(f"GPU: {torch.cuda.get_device_name(0)}")
+                print(f"CUDA version: {torch.version.cuda}")
+            else:
+                print("WARNING: Running on CPU - very slow inference expected")
+            tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
+            print("XTTS v2 loaded successfully on", device)
+        except Exception as load_error:
+            print("CRITICAL: XTTS model loading failed!")
+            print(traceback.format_exc())
+            raise  # Crash worker with log for debugging
     return tts
 
 def enhance_audio(audio, sr=24000):
     try:
+        print("Starting audio enhancement...")
         reduced = nr.reduce_noise(y=audio, sr=sr)
         trimmed, _ = librosa.effects.trim(reduced, top_db=25)
         fft = np.fft.rfft(trimmed)
@@ -35,12 +48,15 @@ def enhance_audio(audio, sr=24000):
         loudness = meter.integrated_loudness(shaped)
         normalized = pyln.normalize.loudness(shaped, loudness, -16.0)
         normalized = np.clip(normalized, -0.99, 0.99)
+        print("Audio enhancement completed")
         return normalized
     except Exception as e:
-        print("Enhance failed:", str(e))
-        return audio
+        print("Enhancement failed:", str(e))
+        traceback.print_exc()
+        return audio  # Fallback to original audio
 
 def handler(event):
+    print("Job received:", event.get("id", "unknown"))
     try:
         input_data = event.get("input", {})
         text = input_data.get("text")
@@ -49,6 +65,8 @@ def handler(event):
 
         if not text or not speaker_b64:
             return {"error": "Missing text or speaker_wav_base64"}
+
+        print(f"Processing text: '{text[:50]}...' | Language: {language}")
 
         speaker_bytes = base64.b64decode(speaker_b64)
 
@@ -80,9 +98,12 @@ def handler(event):
         os.remove(speaker_path)
         os.remove(output_path)
 
+        print("Job completed successfully")
         return {"audio_base64": output_b64}
 
     except Exception as e:
-        return {"error": str(e)}
+        error_msg = f"Handler error: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return {"error": error_msg}
 
 runpod.serverless.start({"handler": handler})
