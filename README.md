@@ -1,38 +1,67 @@
-# XTTS v2 Serverless Deployment
-
-This repository contains a production-ready Docker image for deploying XTTS v2 on RunPod Serverless.
+# My XTTS Serverless (RunPod)
 
 ## Features
 
-- GPU acceleration (CUDA)
-- FastAPI endpoint
-- API key authentication
-- Multilingual XTTS v2
-- Speaker voice cloning support
+- XTTS v2 multilingual TTS
+- Voice cloning
+- Multi-speaker dialogue mode
+- Studio mastering pipeline
+- Noise reduction
+- Loudness normalization (-16 LUFS)
+- Lip-sync ready clean WAV
+- GPU accelerated
+- Auto scaling (Serverless)
 
-## Endpoint
+---
 
-POST /generate
+## Input Format (Single Speaker)
 
-Headers:
-x-api-key: YOUR_SECRET_KEY
+POST JSON:
 
-Form-data:
-text: Text to synthesize
-language: Target language (e.g. "hi", "en")
-speaker_wav: WAV file
+{
+  "input": {
+    "text": "Hello world",
+    "language": "hi",
+    "speaker_wav_base64": "BASE64_WAV"
+  }
+}
 
-Response:
-audio/wav binary
+---
 
-## Environment Variable
+## Multi-Speaker Format
 
-XTTS_API_KEY=your_secure_key_here
+{
+  "input": {
+    "language": "hi",
+    "dialogue": [
+      {"speaker": "A", "text": "Hello"},
+      {"speaker": "B", "text": "Kaise ho"}
+    ],
+    "speakers": {
+      "A": "BASE64_WAV_A",
+      "B": "BASE64_WAV_B"
+    }
+  }
+}
+
+---
+
+## Output
+
+{
+  "audio_base64": "BASE64_ENCODED_WAV"
+}
+
+---
 
 ## Deployment
 
-1. Push this repo to GitHub
-2. Create RunPod Serverless endpoint
-3. Select GPU (RTX A4500)
-4. Set environment variable XTTS_API_KEY
-5. Deploy
+1. Push to GitHub
+2. Create RunPod Serverless Endpoint
+3. Connect GitHub repo
+4. Deploy with GPU
+5. Set Min Workers = 0 (Cost Saving)
+
+---
+
+Cold start may take ~20-40 seconds (model load).
