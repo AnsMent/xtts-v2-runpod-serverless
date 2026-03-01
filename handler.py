@@ -15,7 +15,7 @@ import re
 import traceback
 import sys
 
-# Global model - None initially
+# Global model - None initially to avoid startup crash
 model = None
 
 def load_model():
@@ -23,27 +23,29 @@ def load_model():
     try:
         print("Attempting to load XTTS v2 model...")
         if not torch.cuda.is_available():
-            print("WARNING: CUDA not available! Falling back to CPU (slow).")
+            print("WARNING: CUDA not available! Falling back to CPU (very slow). Check GPU config.")
+        else:
+            print(f"CUDA available: {torch.cuda.get_device_name(0)}")
         model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", 
                     gpu=torch.cuda.is_available())
-        print("XTTS v2 model loaded successfully on device:", "GPU" if torch.cuda.is_available() else "CPU")
+        print("XTTS v2 model loaded successfully!")
     except Exception as e:
-        print("CRITICAL: Model load failed!")
+        print("CRITICAL: Model load failed! Details:")
         print(traceback.format_exc())
-        raise  # Re-raise to crash worker if needed, but log first
+        raise
 
 def download_reference_audio(url: str, job_id: str, index: int) -> str:
     try:
         temp_path = f"/tmp/ref_{job_id}_{index}.wav"
-        print(f"Downloading reference audio from {url} to {temp_path}")
+        print(f"Downloading reference from {url}")
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         with open(temp_path, "wb") as f:
             f.write(response.content)
-        print("Reference audio downloaded successfully")
+        print("Download complete")
         return temp_path
     except Exception as e:
-        print(f"Download failed for {url}: {str(e)}")
+        print(f"Download error: {str(e)}")
         raise
 
 def parse_multispeaker_text(text: str) -> list:
@@ -106,8 +108,8 @@ def apply_emotion_effects(wav_tensor: torch.Tensor, sr: int, emotion: str) -> to
             wav_tensor = F.highpass_biquad(wav_tensor, sr, cutoff_freq=2000, q=0.707)
         return wav_tensor
     except Exception as e:
-        print(f"Emotion effect failed for {emotion}: {str(e)}")
-        return wav_tensor  # Fallback to original
+        print(f"Emotion effect skipped due to error: {str(e)}")
+        return wav_tensor
 
 def enhance_audio(wav_np: np.ndarray, sr: int = 24000, add_reverb: bool = False, normalize_volume: bool = True, emotion: str = "neutral") -> np.ndarray:
     try:
@@ -116,10 +118,8 @@ def enhance_audio(wav_np: np.ndarray, sr: int = 24000, add_reverb: bool = False,
         enhanced = wav_tensor.squeeze(0).numpy()
         reduced_noise = nr.reduce_noise(y=enhanced, sr=sr, stationary=True, prop_decrease=0.90, n_std_thresh_stationary=1.5)
         high_pass = librosa.effects.preemphasis(reduced_noise, coef=0.98)
-        enhanced = F.equalizer_biquad(torch.from_numpy(high_pass).float(), sample_rate=sr, 
-                                     center_freq=800, gain=3.0, q=1.2).numpy()
-        enhanced = F.equalizer_biquad(torch.from_numpy(enhanced).float(), sample_rate=sr, 
-                                     center_freq=3000, gain=2.5, q=1.0).numpy()
+        enhanced = F.equalizer_biquad(torch.from_numpy(high_pass).float(), sample_rate=sr, center_freq=800, gain=3.0, q=1.2).numpy()
+        enhanced = F.equalizer_biquad(torch.from_numpy(enhanced).float(), sample_rate=sr, center_freq=3000, gain=2.5, q=1.0).numpy()
         if normalize_volume:
             enhanced = librosa.util.normalize(enhanced, norm=np.inf, threshold=-3.0)
         if add_reverb:
@@ -127,11 +127,11 @@ def enhance_audio(wav_np: np.ndarray, sr: int = 24000, add_reverb: bool = False,
             enhanced = enhanced * 0.7 + reverb * 0.3
         return enhanced
     except Exception as e:
-        print(f"Audio enhancement failed: {str(e)}")
-        return wav_np  # Fallback
+        print(f"Enhance skipped: {str(e)}")
+        return wav_np
 
 def handler(job):
-    print(f"Job received: {job['id']}")
+    print(f"Job {job['id']} started")
     try:
         job_input = job["input"]
         text = job_input.get("text")
@@ -149,9 +149,7 @@ def handler(job):
 
         if language not in ["en", "hi", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "ja", "ko", "hu"]:
             language = "en"
-            print("Language fallback to en")
 
-        # Load model only when needed (prevents startup crash)
         global model
         if model is None:
             load_model()
@@ -172,7 +170,6 @@ def handler(job):
             if speaker_idx >= len(ref_paths):
                 speaker_idx = 0
             ref_path = ref_paths[speaker_idx]
-            print(f"Generating segment for speaker {speaker_idx+1}: {segment[:50]}...")
             wav_segment = tts_model.tts(
                 text=segment.strip(),
                 speaker_wav=ref_path,
@@ -193,13 +190,10 @@ def handler(job):
 
         audio_base64 = base64.b64encode(buffer.read()).decode("utf-8")
 
-        # Cleanup
         for ref_path in ref_paths:
             if ref_path and os.path.exists(ref_path):
                 os.remove(ref_path)
-                print(f"Cleaned up {ref_path}")
 
-        print(f"Job {job['id']} completed successfully")
         return {
             "status": "success",
             "audio_base64": audio_base64,
@@ -208,16 +202,18 @@ def handler(job):
         }
 
     except Exception as e:
-        error_msg = f"Handler error: {str(e)}\n{traceback.format_exc()}"
+        error_msg = f"Handler failed: {str(e)}\n{traceback.format_exc()}"
         print(error_msg)
         return {"error": error_msg}
 
 if __name__ == "__main__":
-    print("Starting RunPod serverless worker...")
+    print("Worker starting - PyTorch version check:")
     try:
-        # Do NOT load model here - delay to handler
-        runpod.serverless.start({"handler": handler})
-    except Exception as startup_error:
-        print(f"Startup critical error: {str(startup_error)}")
-        print(traceback.format_exc())
-        sys.exit(1)
+        import torch
+        print(f"PyTorch: {torch.__version__}")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"CUDA version: {torch.version.cuda}")
+    except ImportError:
+        print("PyTorch import failed at startup!")
+    runpod.serverless.start({"handler": handler})
