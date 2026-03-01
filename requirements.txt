@@ -1,8 +1,2 @@
-# requirements.txt ab minimal hai kyunki coqui-tts[cuda] sab cover karta hai
-runpod>=1.6.0
-requests
-numpy
-scipy
-librosa
-noisereduce
-torchaudio
+# requirements.txt now empty/minimal since pip installs handle everything
+# No need for pinned versions here - coqui-tts[cuda] pulls compatible deps
