@@ -1,36 +1,18 @@
-# XTTS Serverless (RunPod)
+# XTTS Serverless (RunPod) - Stable Version
 
 ## Features
-- XTTS v2 multilingual TTS
-- Voice cloning
-- Studio-quality mastering
-- Noise reduction
-- Loudness normalization (-16 LUFS)
+- XTTS v2 multilingual TTS with voice cloning
+- Noise reduction + loudness normalization (-16 LUFS)
 - GPU accelerated
-- Serverless auto scaling
+- Serverless auto-scaling
+- Input via base64 speaker audio (secure & easy from WP)
 
-## Input JSON
+## Input JSON Example
 
+```json
 {
   "input": {
-    "text": "Hello world",
+    "text": "Namaste bhai, yeh test audio hai",
     "language": "hi",
-    "speaker_wav_base64": "BASE64_WAV"
+    "speaker_wav_base64": "UklGRiQAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="  // real base64 here
   }
-}
-
-## Output
-
-{
-  "audio_base64": "BASE64_ENCODED_WAV"
-}
-
-## Deployment
-
-1. Push to GitHub
-2. Create RunPod Serverless endpoint
-3. Import GitHub repo
-4. Build context: /
-5. Dockerfile path: Dockerfile
-6. Min workers = 0
-7. Deploy
