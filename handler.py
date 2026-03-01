@@ -10,49 +10,35 @@ import pyloudnorm as pyln
 import noisereduce as nr
 from TTS.api import TTS
 
-# =============================
-# MODEL LOAD
-# =============================
+# Model load - delayed to handler first call (startup safe)
+tts = None
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-print("🚀 Loading XTTS model...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(DEVICE)
-print("✅ XTTS Loaded on", DEVICE)
-
-# =============================
-# AUDIO ENHANCEMENT
-# =============================
+def load_model():
+    global tts
+    if tts is None:
+        print("Loading XTTS v2 model...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
+        print("XTTS v2 loaded on", device)
+    return tts
 
 def enhance_audio(audio, sr=24000):
-    # Noise reduction
-    reduced = nr.reduce_noise(y=audio, sr=sr)
-
-    # Trim silence
-    trimmed, _ = librosa.effects.trim(reduced, top_db=25)
-
-    # Simple EQ shaping
-    fft = np.fft.rfft(trimmed)
-    freqs = np.fft.rfftfreq(len(trimmed), 1/sr)
-
-    fft[(freqs > 120) & (freqs < 300)] *= 1.1
-    fft[(freqs > 3000) & (freqs < 6000)] *= 1.05
-
-    shaped = np.fft.irfft(fft)
-
-    # Loudness normalize (-16 LUFS)
-    meter = pyln.Meter(sr)
-    loudness = meter.integrated_loudness(shaped)
-    normalized = pyln.normalize.loudness(shaped, loudness, -16.0)
-
-    # Peak limiter
-    normalized = np.clip(normalized, -0.99, 0.99)
-
-    return normalized
-
-# =============================
-# HANDLER
-# =============================
+    try:
+        reduced = nr.reduce_noise(y=audio, sr=sr)
+        trimmed, _ = librosa.effects.trim(reduced, top_db=25)
+        fft = np.fft.rfft(trimmed)
+        freqs = np.fft.rfftfreq(len(trimmed), 1/sr)
+        fft[(freqs > 120) & (freqs < 300)] *= 1.1
+        fft[(freqs > 3000) & (freqs < 6000)] *= 1.05
+        shaped = np.fft.irfft(fft)
+        meter = pyln.Meter(sr)
+        loudness = meter.integrated_loudness(shaped)
+        normalized = pyln.normalize.loudness(shaped, loudness, -16.0)
+        normalized = np.clip(normalized, -0.99, 0.99)
+        return normalized
+    except Exception as e:
+        print("Enhance failed:", str(e))
+        return audio
 
 def handler(event):
     try:
@@ -70,7 +56,9 @@ def handler(event):
             tmp_s.write(speaker_bytes)
             speaker_path = tmp_s.name
 
-        wav = tts.tts(
+        tts_model = load_model()
+
+        wav = tts_model.tts(
             text=text,
             speaker_wav=speaker_path,
             language=language,
@@ -79,7 +67,6 @@ def handler(event):
         )
 
         audio_np = np.array(wav)
-
         enhanced = enhance_audio(audio_np, 24000)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
