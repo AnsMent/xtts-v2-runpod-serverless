@@ -1,22 +1,31 @@
-FROM runpod/pytorch:2.4.0-py3.10-cuda12.1.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
-RUN apt-get update && apt-get install -y \
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt update && apt install -y \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
     ffmpeg \
-    espeak-ng \
-    libsndfile1 \
+    git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python
 
 WORKDIR /app
 
-# Ensure latest PyTorch with CUDA 12.1 (override if base has older)
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+COPY requirements.txt /app/
 
-# Install coqui-tts with CUDA support + other deps
-RUN pip install --no-cache-dir coqui-tts[cuda] runpod requests numpy scipy librosa noisereduce torchaudio
+RUN python -m pip install --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY handler.py .
+COPY server.py /app/
+COPY entrypoint.sh /app/
 
-ENV PYTHONUNBUFFERED=1
+RUN chmod +x /app/entrypoint.sh
 
-CMD ["python", "-u", "handler.py"]
+EXPOSE 8000
+
+ENTRYPOINT ["/app/entrypoint.sh"]
