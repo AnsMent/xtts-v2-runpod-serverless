@@ -1,4 +1,4 @@
-FROM runpod/pytorch:2.2.0-py3.10-cuda12.1.0-runtime-ubuntu22.04
+FROM runpod/pytorch:1.0.3-cu1290-torch291-ubuntu2204
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy renamed requirements to avoid any buildpack conflict
+# Copy renamed requirements to avoid any conflict
 COPY requirements-docker.txt requirements.txt
 
 # Upgrade pip and install packages
