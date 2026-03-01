@@ -5,11 +5,10 @@ import os
 import torch
 import numpy as np
 import soundfile as sf
-import librosa
-import noisereduce as nr
 from TTS.api import TTS
 import traceback
 
+# Global model - lazy load to avoid startup crash
 tts = None
 
 def load_model():
@@ -21,6 +20,7 @@ def load_model():
             print(f"Device: {device}")
             if device == "cuda":
                 print(f"GPU: {torch.cuda.get_device_name(0)}")
+                print(f"CUDA version: {torch.version.cuda}")
             tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
             print("XTTS v2 loaded successfully on", device)
         except Exception as e:
