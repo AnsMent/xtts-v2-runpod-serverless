@@ -11,7 +11,6 @@ import noisereduce as nr
 from TTS.api import TTS
 import traceback
 
-# Global model - lazy load
 tts = None
 
 def load_model():
@@ -20,15 +19,13 @@ def load_model():
         try:
             print("Loading XTTS v2 model...")
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Device: {device}")
+            print(f"Device detected: {device}")
             if device == "cuda":
                 print(f"GPU: {torch.cuda.get_device_name(0)}")
                 print(f"CUDA version: {torch.version.cuda}")
-            else:
-                print("WARNING: Running on CPU - very slow inference expected")
             tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(device == "cuda"))
             print("XTTS v2 loaded successfully on", device)
-        except Exception as load_error:
+        except Exception as e:
             print("CRITICAL: XTTS model loading failed!")
             print(traceback.format_exc())
             raise
@@ -43,7 +40,7 @@ def validate_reference_audio(path):
             raise ValueError("Reference audio too short (<3 seconds)")
         if duration > 30:
             print("Reference long (>30s) - clipping to 30s")
-            y = y[:30 * sr]
+            y = y[:int(30 * sr)]
         return y, sr
     except Exception as e:
         print(f"Reference validation failed: {str(e)}")
@@ -51,7 +48,7 @@ def validate_reference_audio(path):
 
 def enhance_audio(audio, sr=24000):
     try:
-        print("Starting enhancement...")
+        print("Starting audio enhancement...")
         reduced = nr.reduce_noise(y=audio, sr=sr)
         trimmed, _ = librosa.effects.trim(reduced, top_db=25)
         fft = np.fft.rfft(trimmed)
@@ -63,10 +60,10 @@ def enhance_audio(audio, sr=24000):
         loudness = meter.integrated_loudness(shaped)
         normalized = pyln.normalize.loudness(shaped, loudness, -16.0)
         normalized = np.clip(normalized, -0.99, 0.99)
-        print("Enhancement completed")
+        print("Audio enhancement completed")
         return normalized
     except Exception as e:
-        print(f"Enhance failed: {str(e)}")
+        print(f"Enhancement failed: {str(e)}")
         traceback.print_exc()
         return audio
 
