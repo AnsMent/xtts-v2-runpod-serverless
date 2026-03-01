@@ -1,8 +1,8 @@
 runpod==1.6.2
-torch==2.0.1+cu118
-torchaudio==2.0.2+cu118
-torchvision==0.15.2+cu118
---extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.1.2
+torchaudio==2.1.2
+torchvision==0.16.2
+--extra-index-url https://download.pytorch.org/whl/cu121
 TTS==0.22.0
 numpy==1.24.4
 scipy==1.10.1
