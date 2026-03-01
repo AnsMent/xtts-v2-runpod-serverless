@@ -1,17 +1,17 @@
-FROM runpod/pytorch:2.1.2-py3.10-cuda12.1.0-runtime-ubuntu22.04
+FROM runpod/pytorch:2.2.0-py3.10-cuda12.1.0-runtime-ubuntu22.04
 
 WORKDIR /app
 
-# System dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Copy renamed requirements to avoid any buildpack conflict
 COPY requirements-docker.txt requirements.txt
 
-# Install Python packages
+# Upgrade pip and install packages
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
